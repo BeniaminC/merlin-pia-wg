@@ -51,7 +51,9 @@ echo "  Username: $ROUTER_USERNAME"
 #   - wgc1_ppub and wgc_ppub: set to PUB_KEY
 #   - wgc1_ep_addr, wgc1_ep_addr_r, and wgc_ep_addr: set to ENDPOINT
 #   - wgc_aips and wgc1_aips: set to 0.0.0.0/0
-SSH_CMD="nvram set wgc1_addr=${ADDRESS}; nvram set wgc_addr=${ADDRESS}; \
+SSH_CMD="
+nvram set wgc1_desc=PIA-WG; wgc_desc=PIA-WG; \
+nvram set wgc1_addr=${ADDRESS}; nvram set wgc_addr=${ADDRESS}; \
 nvram set wgc1_priv=${PRIVATE_KEY}; nvram set wgc_priv=${PRIVATE_KEY}; \
 nvram set wgc1_dns='${DNS}'; nvram set wgc_dns='${DNS}'; \
 nvram set wgc1_ppub=${PUB_KEY}; nvram set wgc_ppub=${PUB_KEY}; \
