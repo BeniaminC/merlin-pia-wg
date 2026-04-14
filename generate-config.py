@@ -9,14 +9,29 @@ from getpass import getpass
 from pprint import pprint
 
 import yaml
+from zoneinfo import ZoneInfo
 from icmplib import multiping
 from pick import pick
 from wgconfig import WGConfig
 
 from piawg import piawg
 
+REGION_TIMEZONES = {
+    "Venezuela": "America/Caracas",
+    "US East": "America/New_York",
+    "US West": "America/Los_Angeles",
+    "UK London": "Europe/London",
+    "France": "Europe/Paris",
+    "DE Berlin": "Europe/Berlin",
+    "JP Tokyo": "Asia/Tokyo",
+    "AU Sydney": "Australia/Sydney",
+    "AU Perth": "Australia/Perth",
+    "Singapore": "Asia/Singapore",
+    "India": "Asia/Kolkata",
+}
+
 # comment to debug
-sys.tracebacklimit = 0
+# sys.tracebacklimit = 0
 
 def main():
     pia = piawg()
@@ -27,7 +42,40 @@ def main():
     parser.add_argument('-r', '--region', dest='region', choices=["auto"]+regions, help='Allowed values are '+', '.join(regions), metavar='')
     parser.add_argument('--sort-latency', action='store_true', help='Display lowest latency regions first (requires root)')
     parser.add_argument('-f', '--config', help='Name of the generated config file')
+    parser.add_argument('-tz', '--timezone', help="Pick a region which satifies the timezone")
     args = parser.parse_args()
+
+    # Update Config for zones
+    if args.timezone:
+
+        target_hour = args.timezone
+        selected_region = None
+        for region, tz_name in REGION_TIMEZONES.items():
+            local_time = datetime.now(ZoneInfo(tz_name))
+            if local_time.hour == target_hour:
+                selected_region = region
+                break
+
+        if not selected_region:
+            # fallback to default
+            selected_region = ""
+        config_file = os.path.join(os.path.dirname(__file__), 'config.yaml')
+        config_file = os.path.normpath(config_file)
+        if os.path.exists(config_file):
+            print(f"Loading config from {config_file}")
+            with open(config_file, 'r') as f:
+                config = yaml.safe_load(f)
+        else:
+            config = {}
+        # Update the region
+        config.setdefault("pia", {})
+        config["pia"]["region"] = selected_region
+        # Write back to file
+        with open(config_file, 'w') as f:
+            yaml.safe_dump(config, f)
+
+        print(f"Config updated. Region set to {selected_region}")
+
 
     # Load config
     config = None

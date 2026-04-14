@@ -1,14 +1,6 @@
 import requests
 import json
-from requests_toolbelt.adapters import host_header_ssl
-import urllib3
 import subprocess
-import urllib.parse
-
-# PIA uses the CN attribute for certificates they issue themselves.
-# This will be deprecated by urllib3 at some point in the future, and generates a warning (that we ignore).
-urllib3.disable_warnings(urllib3.exceptions.SubjectAltNameWarning)
-
 
 class piawg:
     def __init__(self):
@@ -22,7 +14,6 @@ class piawg:
 
     def get_server_list(self):
         r = requests.get('https://serverlist.piaservers.net/vpninfo/servers/v4')
-        # Only process first line of response, there's some base64 data at the end we're ignoring
         data = json.loads(r.text.splitlines()[0])
         for server in data['regions']:
             self.server_list[server['name']] = server
@@ -31,43 +22,52 @@ class piawg:
         self.region = region_name
 
     def get_token(self, username, password):
-        # Get common name and IP address for metadata endpoint in region
-        meta_cn = self.server_list[self.region]['servers']['meta'][0]['cn']
-        meta_ip = self.server_list[self.region]['servers']['meta'][0]['ip']
+        # Mapped perfectly from get_token.sh
+        # This is a public URL, so normal DNS and SSL work flawlessly.
+        url = 'https://www.privateinternetaccess.com/api/client/v2/token'
 
-        # Some tricks to verify PIA certificate, even though we're sending requests to an IP and not a proper domain
-        # https://toolbelt.readthedocs.io/en/latest/adapters.html#requests_toolbelt.adapters.host_header_ssl.HostHeaderSSLAdapter
-        s = requests.Session()
-        s.mount('https://', host_header_ssl.HostHeaderSSLAdapter())
-        s.verify = 'ca.rsa.4096.crt'
-
-        r = s.get("https://{}/authv3/generateToken".format(meta_ip), headers={"Host": meta_cn},
-                  auth=(username, password))
-        data = r.json()
-        if r.status_code == 200 and data['status'] == 'OK':
-            self.token = data['token']
-            return True
-        else:
+        try:
+            r = requests.post(url, data={"username": username, "password": password})
+            if r.status_code == 200:
+                data = r.json()
+                if 'token' in data:
+                    self.token = data['token']
+                    return True
+            else:
+                print(f"Error fetching token: HTTP {r.status_code}")
+                return False
+        except Exception as e:
+            print(f"Token generation failed: {e}")
             return False
 
     def generate_keys(self):
-        self.privatekey = subprocess.run(['wg', 'genkey'], stdout=subprocess.PIPE, encoding="utf-8").stdout.strip()
-        self.publickey = subprocess.run(['wg', 'pubkey'], input=self.privatekey, stdout=subprocess.PIPE,
-                                        encoding="utf-8").stdout.strip()
+        self.privatekey = subprocess.run(['wg', 'genkey'], stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip()
+        self.publickey = subprocess.run(['wg', 'pubkey'], input=self.privatekey, stdout=subprocess.PIPE, encoding="utf-8", check=True).stdout.strip()
 
     def addkey(self):
-        # Get common name and IP address for wireguard endpoint in region
         cn = self.server_list[self.region]['servers']['wg'][0]['cn']
         ip = self.server_list[self.region]['servers']['wg'][0]['ip']
 
-        s = requests.Session()
-        s.mount('https://', host_header_ssl.HostHeaderSSLAdapter())
-        s.verify = 'ca.rsa.4096.crt'
+        # Mapped perfectly from connect_to_wireguard_with_token.sh
+        # curl natively handles the complex IP routing and SNI spoofing.
+        cmd = [
+            "curl", "-s", "-G",
+            "--connect-to", f"{cn}::{ip}:",
+            "--cacert", "ca.rsa.4096.crt",
+            "--data-urlencode", f"pt={self.token}",
+            "--data-urlencode", f"pubkey={self.publickey}",
+            f"https://{cn}:1337/addKey"
+        ]
 
-        r = s.get("https://{}:1337/addKey?pt={}&pubkey={}".format(ip, urllib.parse.quote(self.token),
-                                                                  urllib.parse.quote(self.publickey)), headers={"Host": cn})
-        if r.status_code == 200 and r.json()['status'] == 'OK':
-            self.connection = r.json()
-            return True, r.content
-        else:
-            return False, r.content
+        try:
+            # Execute the curl command
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, text=True, check=True)
+            response_json = json.loads(result.stdout)
+
+            if response_json.get('status') == 'OK':
+                self.connection = response_json
+                return True, result.stdout
+            else:
+                return False, result.stdout
+        except Exception as e:
+            return False, str(e)
