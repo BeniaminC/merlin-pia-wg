@@ -57,7 +57,8 @@ nvram set wgc1_ppub='${PUB_KEY}'; nvram set wgc_ppub='${PUB_KEY}'; \
 nvram set wgc1_ep_addr='${ENDPOINT_ADDR}'; nvram set wgc1_ep_addr_r='${ENDPOINT_ADDR}'; nvram set wgc_ep_addr='${ENDPOINT_ADDR}'; \
 nvram set wgc1_ep_port='${ENDPOINT_PORT}'; nvram set wgc_ep_port='${ENDPOINT_PORT}'; \
 nvram set wgc_aips='0.0.0.0/0'; nvram set wgc1_aips='0.0.0.0/0'; \
-nvram commit
+nvram commit; \
+service restart_wgc1
 "
 
 echo "Updating nvram on router..."
